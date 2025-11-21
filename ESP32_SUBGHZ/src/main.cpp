@@ -59,8 +59,6 @@ int current_screen = 0; // 0 = menu, 1 = screenshot, 2 = qr
 void setup()
 {
   Serial.begin(115200);
-  // define pins for buttons
-  u8g2.clearBuffer(); // clear buffer for storing display content in RAM
 
   Serial.println("\n[setup] Booting ESP32...");
   Serial.println("[setup] Initializing CC1101...");
@@ -78,6 +76,7 @@ void setup()
   Serial.println("[setup] Setup complete.\n");
   // Call the menu setup function
   menuSetup();
+  u8g2.clearBuffer();
 }
 
 void loop()
