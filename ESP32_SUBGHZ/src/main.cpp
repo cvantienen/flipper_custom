@@ -5,10 +5,11 @@
 #include <menu.h>
 #include <icon.h>
 #include <radio.h>
+#include <signals.h>  // ← ADD THIS
 
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0); // [full framebuffer, size = 1024 bytes]
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
 
-// Array of all bitmaps for convenience. (Total bytes used to store images in PROGMEM = 384)
+// Keep your existing bitmap arrays
 const unsigned char *bitmap_icons[8] = {
     bitmap_icon_3dcube,
     bitmap_icon_battery,
@@ -17,178 +18,262 @@ const unsigned char *bitmap_icons[8] = {
     bitmap_icon_gps_speed,
     bitmap_icon_knob_over_oled,
     bitmap_icon_parksensor,
-    bitmap_icon_turbo};
-// Array of all bitmaps for convenience. (Total bytes used to store images in PROGMEM = 8320)
-const unsigned char *bitmap_screenshots[8] = {
-    bitmap_screenshot_3dcube,
-    bitmap_screenshot_battery,
-    bitmap_screenshot_gauges,
-    bitmap_screenshot_fireworks,
-    bitmap_screenshot_gps_speed,
-    bitmap_screenshot_knob_over_oled,
-    bitmap_screenshot_parksensor,
-    bitmap_screenshot_turbo};
-// Array of all bitmaps for convenience. (Total bytes used to store images in PROGMEM = 8320)
-const unsigned char *bitmap_qr_codes[8] = {
-    bitmap_qr_3dcube,
-    bitmap_qr_battery,
-    bitmap_qr_gauges,
-    bitmap_qr_fireworks,
-    bitmap_qr_gps_speed,
-    bitmap_qr_knob_over_oled,
-    bitmap_qr_parksensor,
-    bitmap_qr_turbo};
+    bitmap_icon_turbo
+};
 
 // Menu variables
-const int NUM_ITEMS = 8;        // number of items in the list and also the number of screenshots and screenshots with QR codes (other screens)
-const int MAX_ITEM_LENGTH = 20; // maximum characters for the item name
-char menu_items[NUM_ITEMS][MAX_ITEM_LENGTH] = {
-    "3D Cube", "Battery", "Dashboard", "Fireworks",
-    "GPS Speed", "Big Knob", "Park Sensor", "Turbo Gauge"
-};
-int button_up_clicked = 0;     // only perform action when button is clicked, and wait until another press
-int button_select_clicked = 0; // same as above
-int button_down_clicked = 0;   // same as above
-int item_selected = 0; // which item in the menu is selected
-int item_sel_previous; // previous item - used in the menu screen to draw the item before the selected one
-int item_sel_next;     // next item - used in the menu screen to draw next item after the selected one
-int current_screen = 0; // 0 = menu, 1 = screenshot, 2 = qr
-// note - when changing the order of items above, make sure the other arrays referencing bitmaps
-// also have the same order, for example array "bitmap_icons" for icons, and other arrays for screenshots and QR codes
+int button_up_clicked = 0;
+int button_select_clicked = 0;
+int button_down_clicked = 0;
+
+// Category menu variables
+int category_selected = 0;
+int category_sel_previous;
+int category_sel_next;
+
+// Signal submenu variables
+int signal_selected = 0;
+int signal_sel_previous;
+int signal_sel_next;
+
+// Screen states: 0=category menu, 1=signal submenu, 2=signal details, 3=transmit
+int current_screen = 0;
 
 void setup()
 {
-  Serial.begin(115200);
-
-  Serial.println("\n[setup] Booting ESP32...");
-  Serial.println("[setup] Initializing CC1101...");
-  initCC1101(433.92);
-
-  if (ELECHOUSE_cc1101.getCC1101())
-  {
-    Serial.println("[setup] ✅ Connection OK");
-  }
-  else
-  {
-    Serial.println("[setup] ❌ No CC1101 detected");
-  }
-
-  Serial.println("[setup] Setup complete.\n");
-  // Call the menu setup function
-  menuSetup();
-  u8g2.clearBuffer();
+    Serial.begin(115200);
+    
+    Serial.println("\n[setup] Booting ESP32...");
+    Serial.println("[setup] Initializing CC1101...");
+    initCC1101(433.92);
+    
+    if (ELECHOUSE_cc1101.getCC1101()) {
+        Serial.println("[setup] ✅ Connection OK");
+    } else {
+        Serial.println("[setup] ❌ No CC1101 detected");
+    }
+    
+    Serial.println("[setup] Setup complete.\n");
+    menuSetup();
+    u8g2.clearBuffer();
 }
 
 void loop()
 {
-  // Menu loop to handle button presses and display updates
-    // (Implementation of menu navigation and display logic goes here)
-  if (current_screen == 0)
-  { // MENU SCREEN
-
-    // up and down buttons only work for the menu screen
-    if ((digitalRead(BUTTON_UP_PIN) == LOW) && (button_up_clicked == 0))
-    {                                    // up button clicked - jump to previous menu item
-      item_selected = item_selected - 1; // select previous item
-      button_up_clicked = 1;             // set button to clicked to only perform the action once
-      if (item_selected < 0)
-      { // if first item was selected, jump to last item
-        item_selected = NUM_ITEMS - 1;
-      }
+    // ========== NAVIGATION FOR CATEGORY MENU (Screen 0) ==========
+    if (current_screen == 0) {
+        if ((digitalRead(BUTTON_UP_PIN) == LOW) && (button_up_clicked == 0)) {
+            category_selected = category_selected - 1;
+            button_up_clicked = 1;
+            if (category_selected < 0) {
+                category_selected = NUM_CATEGORIES - 1;
+            }
+        }
+        else if ((digitalRead(BUTTON_DOWN_PIN) == LOW) && (button_down_clicked == 0)) {
+            category_selected = category_selected + 1;
+            button_down_clicked = 1;
+            if (category_selected >= NUM_CATEGORIES) {
+                category_selected = 0;
+            }
+        }
+        
+        if (digitalRead(BUTTON_UP_PIN) == HIGH) button_up_clicked = 0;
+        if (digitalRead(BUTTON_DOWN_PIN) == HIGH) button_down_clicked = 0;
     }
-    else if ((digitalRead(BUTTON_DOWN_PIN) == LOW) && (button_down_clicked == 0))
-    {                                    // down button clicked - jump to next menu item
-      item_selected = item_selected + 1; // select next item
-      button_down_clicked = 1;           // set button to clicked to only perform the action once
-      if (item_selected >= NUM_ITEMS)
-      { // last item was selected, jump to first menu item
-        item_selected = 0;
-      }
+    
+    // ========== NAVIGATION FOR SIGNAL SUBMENU (Screen 1) ==========
+    else if (current_screen == 1) {
+        int num_signals = CATEGORIES[category_selected].count;
+        
+        if ((digitalRead(BUTTON_UP_PIN) == LOW) && (button_up_clicked == 0)) {
+            signal_selected = signal_selected - 1;
+            button_up_clicked = 1;
+            if (signal_selected < 0) {
+                signal_selected = num_signals - 1;
+            }
+        }
+        else if ((digitalRead(BUTTON_DOWN_PIN) == LOW) && (button_down_clicked == 0)) {
+            signal_selected = signal_selected + 1;
+            button_down_clicked = 1;
+            if (signal_selected >= num_signals) {
+                signal_selected = 0;
+            }
+        }
+        
+        if (digitalRead(BUTTON_UP_PIN) == HIGH) button_up_clicked = 0;
+        if (digitalRead(BUTTON_DOWN_PIN) == HIGH) button_down_clicked = 0;
     }
-
-    if ((digitalRead(BUTTON_UP_PIN) == HIGH) && (button_up_clicked == 1))
-    { // unclick
-      button_up_clicked = 0;
+    
+    // ========== SELECT BUTTON (navigate between screens) ==========
+    if ((digitalRead(BUTTON_SELECT_PIN) == LOW) && (button_select_clicked == 0)) {
+        button_select_clicked = 1;
+        
+        if (current_screen == 0) {
+            // Category menu → Signal submenu
+            current_screen = 1;
+            signal_selected = 0;  // Reset signal selection when entering category
+        }
+        else if (current_screen == 1) {
+            // Signal submenu → Signal details
+            current_screen = 2;
+        }
+        else if (current_screen == 2) {
+            // Signal details → Transmit
+            current_screen = 3;
+        }
+        else {
+            // Transmit → back to signal submenu
+            current_screen = 1;
+        }
     }
-    if ((digitalRead(BUTTON_DOWN_PIN) == HIGH) && (button_down_clicked == 1))
-    { // unclick
-      button_down_clicked = 0;
+    if (digitalRead(BUTTON_SELECT_PIN) == HIGH) {
+        button_select_clicked = 0;
     }
-  }
-
-  if ((digitalRead(BUTTON_SELECT_PIN) == LOW) && (button_select_clicked == 0))
-  {                            // select button clicked, jump between screens
-    button_select_clicked = 1; // set button to clicked to only perform the action once
-    if (current_screen == 0)
-    {
-      current_screen = 1;
-    } // menu items screen --> screenshots screen
-    else if (current_screen == 1)
-    {
-      current_screen = 2;
-    } // screenshots screen --> qr codes screen
-    else
-    {
-      current_screen = 0;
-    } // qr codes screen --> menu items screen
-  }
-  if ((digitalRead(BUTTON_SELECT_PIN) == HIGH) && (button_select_clicked == 1))
-  { // unclick
-    button_select_clicked = 0;
-  }
-
-  // set correct values for the previous and next items
-  item_sel_previous = item_selected - 1;
-  if (item_sel_previous < 0)
-  {
-    item_sel_previous = NUM_ITEMS - 1;
-  } // previous item would be below first = make it the last
-  item_sel_next = item_selected + 1;
-  if (item_sel_next >= NUM_ITEMS)
-  {
-    item_sel_next = 0;
-  } // next item would be after last = make it the first
-
-  u8g2.clearBuffer(); // clear buffer for storing display content in RAM
-
-  if (current_screen == 0)
-  { // MENU SCREEN
-
-    // selected item background
-    u8g2.drawXBMP(0, 22, 128, 21, bitmap_item_sel_outline);
-
-    // draw previous item as icon + label
-    u8g2.setFont(u8g_font_7x14);
-    u8g2.drawStr(25, 15, menu_items[item_sel_previous]);
-    u8g2.drawXBMP(4, 2, 16, 16, bitmap_icons[item_sel_previous]);
-
-    // draw selected item as icon + label in bold font
-    u8g2.setFont(u8g_font_7x14B);
-    u8g2.drawStr(25, 15 + 20 + 2, menu_items[item_selected]);
-    u8g2.drawXBMP(4, 24, 16, 16, bitmap_icons[item_selected]);
-
-    // draw next item as icon + label
-    u8g2.setFont(u8g_font_7x14);
-    u8g2.drawStr(25, 15 + 20 + 20 + 2 + 2, menu_items[item_sel_next]);
-    u8g2.drawXBMP(4, 46, 16, 16, bitmap_icons[item_sel_next]);
-
-    // draw scrollbar background
-    u8g2.drawXBMP(128 - 8, 0, 8, 64, bitmap_scrollbar_background);
-
-    // draw scrollbar handle
-    u8g2.drawBox(125, 64 / NUM_ITEMS * item_selected, 3, 64 / NUM_ITEMS);
-
-    u8g2.setFont(u8g2_font_5x8_tf); // small readable font
-    u8g2.drawStr(108, 63, "C.J.");  // position bottom-right
-  }
-  else if (current_screen == 1)
-  {                                                                  // SCREENSHOTS SCREEN
-    u8g2.drawXBMP(0, 0, 128, 64, bitmap_screenshots[item_selected]); // draw screenshot
-  }
-  else if (current_screen == 2)
-  {                                                               // QR SCREEN
-    u8g2.drawXBMP(0, 0, 128, 64, bitmap_qr_codes[item_selected]); // draw qr code screenshot
-  }
-
-  u8g2.sendBuffer(); // send buffer from RAM to display controller
+    
+    // ========== CALCULATE PREV/NEXT FOR CATEGORY MENU ==========
+    category_sel_previous = category_selected - 1;
+    if (category_sel_previous < 0) {
+        category_sel_previous = NUM_CATEGORIES - 1;
+    }
+    category_sel_next = category_selected + 1;
+    if (category_sel_next >= NUM_CATEGORIES) {
+        category_sel_next = 0;
+    }
+    
+    // ========== CALCULATE PREV/NEXT FOR SIGNAL SUBMENU ==========
+    int num_signals = CATEGORIES[category_selected].count;
+    signal_sel_previous = signal_selected - 1;
+    if (signal_sel_previous < 0) {
+        signal_sel_previous = num_signals - 1;
+    }
+    signal_sel_next = signal_selected + 1;
+    if (signal_sel_next >= num_signals) {
+        signal_sel_next = 0;
+    }
+    
+    // ========== DRAW SCREENS ==========
+    u8g2.clearBuffer();
+    
+    if (current_screen == 0) {
+        // ========== CATEGORY MENU ==========
+        u8g2.drawXBMP(0, 22, 128, 21, bitmap_item_sel_outline);
+        
+        // Previous category
+        u8g2.setFont(u8g_font_7x14);
+        u8g2.drawStr(25, 15, CATEGORIES[category_sel_previous].name);
+        u8g2.drawXBMP(4, 2, 16, 16, bitmap_icons[category_sel_previous % 8]);
+        
+        // Selected category (bold)
+        u8g2.setFont(u8g_font_7x14B);
+        u8g2.drawStr(25, 37, CATEGORIES[category_selected].name);
+        u8g2.drawXBMP(4, 24, 16, 16, bitmap_icons[category_selected % 8]);
+        
+        // Next category
+        u8g2.setFont(u8g_font_7x14);
+        u8g2.drawStr(25, 59, CATEGORIES[category_sel_next].name);
+        u8g2.drawXBMP(4, 46, 16, 16, bitmap_icons[category_sel_next % 8]);
+        
+        // Scrollbar
+        u8g2.drawXBMP(128 - 8, 0, 8, 64, bitmap_scrollbar_background);
+        u8g2.drawBox(125, 64 / NUM_CATEGORIES * category_selected, 3, 64 / NUM_CATEGORIES);
+        
+        u8g2.setFont(u8g2_font_5x8_tf);
+        u8g2.drawStr(108, 63, "C.J.");
+    }
+    else if (current_screen == 1) {
+        // ========== SIGNAL SUBMENU ==========
+        SubGHzSignal* signals = CATEGORIES[category_selected].signals;
+        
+        // Draw category title at top
+        u8g2.setFont(u8g2_font_6x10_tf);
+        u8g2.drawStr(5, 10, CATEGORIES[category_selected].name);
+        u8g2.drawLine(0, 12, 128, 12);
+        
+        // Adjust positions for submenu
+        u8g2.drawFrame(2, 18, 124, 18);
+        
+        // Previous signal
+        u8g2.setFont(u8g2_font_6x10_tf);
+        u8g2.drawStr(8, 26, signals[signal_sel_previous].name);
+        
+        // Selected signal (bold)
+        u8g2.setFont(u8g2_font_7x13B_tf);
+        u8g2.drawStr(8, 46, signals[signal_selected].name);
+        
+        // Show frequency
+        u8g2.setFont(u8g2_font_5x8_tf);
+        char freq_str[20];
+        snprintf(freq_str, 20, "%.2f MHz", signals[signal_selected].frequency);
+        u8g2.drawStr(8, 56, freq_str);
+        
+        // Next signal
+        u8g2.setFont(u8g2_font_6x10_tf);
+        u8g2.drawStr(8, 66, signals[signal_sel_next].name);
+        
+        // Scrollbar
+        u8g2.drawFrame(122, 14, 4, 48);
+        int scrollbar_pos = map(signal_selected, 0, num_signals - 1, 0, 40);
+        u8g2.drawBox(123, 15 + scrollbar_pos, 2, 6);
+    }
+    else if (current_screen == 2) {
+        // ========== SIGNAL DETAILS ==========
+        SubGHzSignal* signal = &CATEGORIES[category_selected].signals[signal_selected];
+        
+        u8g2.setFont(u8g2_font_7x13B_tf);
+        u8g2.drawStr(5, 12, signal->name);
+        u8g2.drawLine(0, 14, 128, 14);
+        
+        u8g2.setFont(u8g2_font_6x10_tf);
+        
+        // Category
+        char cat_str[25];
+        snprintf(cat_str, 25, "Cat: %s", CATEGORIES[category_selected].name);
+        u8g2.drawStr(5, 28, cat_str);
+        
+        // Frequency
+        char freq_str[25];
+        snprintf(freq_str, 25, "Freq: %.2f MHz", signal->frequency);
+        u8g2.drawStr(5, 40, freq_str);
+        
+        // Samples
+        char len_str[25];
+        snprintf(len_str, 25, "Samples: %d", signal->length);
+        u8g2.drawStr(5, 52, len_str);
+        
+        // Instruction
+        u8g2.setFont(u8g2_font_5x8_tf);
+        u8g2.drawStr(5, 63, "SELECT to transmit");
+    }
+    else if (current_screen == 3) {
+        // ========== TRANSMIT SCREEN ==========
+        SubGHzSignal* signal = &CATEGORIES[category_selected].signals[signal_selected];
+        
+        u8g2.setFont(u8g2_font_9x15B_tf);
+        u8g2.drawStr(15, 25, "SENDING...");
+        
+        u8g2.setFont(u8g2_font_7x13_tf);
+        u8g2.drawStr(10, 45, signal->name);
+        
+        char freq_str[20];
+        snprintf(freq_str, 20, "%.2f MHz", signal->frequency);
+        u8g2.setFont(u8g2_font_6x10_tf);
+        u8g2.drawStr(30, 58, freq_str);
+        
+        u8g2.sendBuffer();  // Show immediately
+        
+        // ← CALL YOUR SEND FUNCTION
+        sendSamples(signal->samples, signal->length, signal->frequency);
+        
+        // Show completion
+        u8g2.clearBuffer();
+        u8g2.setFont(u8g2_font_9x15B_tf);
+        u8g2.drawStr(35, 30, "SENT!");
+        u8g2.sendBuffer();
+        delay(800);
+        
+        current_screen = 1;  // Back to signal submenu
+    }
+    
+    u8g2.sendBuffer();
+    delay(10);
 }

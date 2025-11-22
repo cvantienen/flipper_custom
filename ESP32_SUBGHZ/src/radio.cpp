@@ -1,13 +1,7 @@
 #include <ELECHOUSE_CC1101_SRC_DRV.h>
 #include <radio.h>
 //--------------------------------------------------------------------------------
-// ---------------------------
-// SAMPLE SIGNALS
-// ---------------------------
-int samples_signal_1[LENGTH_SAMPLES_SIGNAL_1] = {250, -250, 250, -250, 250};
-int samples_signal_2[LENGTH_SAMPLES_SIGNAL_1] = {250, -250, 250, -250, 250};
-int samples_signal_3[LENGTH_SAMPLES_SIGNAL_1] = {250, -250, 250, -250, 250};
-int samples_signal_4[LENGTH_SAMPLES_SIGNAL_1] = {250, -250, 250, -250, 250};
+
 
 // ---------------------------
 // CC1101 INITIALIZATION
@@ -77,39 +71,3 @@ void sendSamples(int samples[], int samplesLenght, float mhz)
   delay(20);
 }
 
-// // ---------------------------
-// // OLD MAIN LOOP
-// // ---------------------------
-// // void loop() {
-// //   yield(); // always feed watchdog
-
-// //   // BUTTON 1
-// //   if (digitalRead(PIN_BTN_1) == LOW) {
-// //       Serial.println("[loop] Button 1 pressed");
-// //       while (digitalRead(PIN_BTN_1) == LOW) { delay(10); yield(); }
-// //       sendSamples(samples_signal_1, LENGTH_SAMPLES_SIGNAL_1, 433.92);
-// //   }
-
-// //   // BUTTON 2
-// //   if (digitalRead(PIN_BTN_2) == LOW) {
-// //       Serial.println("[loop] Button 2 pressed");
-// //       while (digitalRead(PIN_BTN_2) == LOW) { delay(10); yield(); }
-// //       sendSamples(samples_signal_2, LENGTH_SAMPLES_SIGNAL_2, 315);
-// //   }
-
-// //   // BUTTON 3
-// //   if (digitalRead(PIN_BTN_3) == LOW) {
-// //       Serial.println("[loop] Button 3 pressed");
-// //       while (digitalRead(PIN_BTN_3) == LOW) { delay(10); yield(); }
-// //       sendSamples(samples_signal_3, LENGTH_SAMPLES_SIGNAL_3, 433.92);
-// //   }
-
-// //   // BUTTON 4
-// //   if (digitalRead(PIN_BTN_4) == LOW) {
-// //       Serial.println("[loop] Button 4 pressed");
-// //       while (digitalRead(PIN_BTN_4) == LOW) { delay(10); yield(); }
-// //       sendSamples(samples_signal_4, LENGTH_SAMPLES_SIGNAL_4, 433.92);
-// //   }
-
-// //   delay(50); // stability
-// // }
