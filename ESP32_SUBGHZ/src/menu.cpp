@@ -13,7 +13,6 @@ void menuSetup(){
     pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
     pinMode(BUTTON_SELECT_PIN, INPUT_PULLUP);
     pinMode(BUTTON_DOWN_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_BACK_PIN, INPUT_PULLUP);
 
     u8g2.clearBuffer();
 }
