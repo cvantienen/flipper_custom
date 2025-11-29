@@ -8,12 +8,6 @@ void menuSetup(){
     u8g2.setColorIndex(1);
     u8g2.begin();
     u8g2.setBitmapMode(1);
-
-    // Define pins for menu buttons
-    pinMode(BUTTON_UP_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_SELECT_PIN, INPUT_PULLUP);
-    pinMode(BUTTON_DOWN_PIN, INPUT_PULLUP);
-
     u8g2.clearBuffer();
 }
 

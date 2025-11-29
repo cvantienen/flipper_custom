@@ -5,9 +5,17 @@
 #include <menu.h>
 #include <icon.h>
 #include <radio.h>
-#include <signals.h>  // ← ADD THIS
+#include "signals.h"
+#include "button.h"
 
+// create display object
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
+
+// create button objects
+Button buttonUp(BUTTON_UP_PIN);
+Button buttonDown(BUTTON_DOWN_PIN);
+Button buttonSelect(BUTTON_SELECT_PIN);
+Button buttonBack(BUTTON_BACK_PIN);
 
 // Keep your existing bitmap arrays
 const unsigned char *bitmap_icons[8] = {
@@ -21,10 +29,7 @@ const unsigned char *bitmap_icons[8] = {
     bitmap_icon_turbo
 };
 
-// Menu variables
-int button_up_clicked = 0;
-int button_select_clicked = 0;
-int button_down_clicked = 0;
+
 
 // Category menu variables
 int category_selected = 0;
@@ -60,95 +65,45 @@ void setup()
 
 void loop()
 {
-    // ========== NAVIGATION FOR CATEGORY MENU (Screen 0) ==========
+    // Button handling
     if (current_screen == 0) {
-        if ((digitalRead(BUTTON_UP_PIN) == LOW) && (button_up_clicked == 0)) {
-            category_selected = category_selected - 1;
-            button_up_clicked = 1;
-            if (category_selected < 0) {
-                category_selected = NUM_CATEGORIES - 1;
-            }
+        if (buttonUp.isPressed()) {
+            category_selected = (category_selected - 1 + NUM_CATEGORIES) % NUM_CATEGORIES;
         }
-        else if ((digitalRead(BUTTON_DOWN_PIN) == LOW) && (button_down_clicked == 0)) {
-            category_selected = category_selected + 1;
-            button_down_clicked = 1;
-            if (category_selected >= NUM_CATEGORIES) {
-                category_selected = 0;
-            }
+        if (buttonDown.isPressed()) {
+            category_selected = (category_selected + 1) % NUM_CATEGORIES;
         }
-        
-        if (digitalRead(BUTTON_UP_PIN) == HIGH) button_up_clicked = 0;
-        if (digitalRead(BUTTON_DOWN_PIN) == HIGH) button_down_clicked = 0;
     }
-    
-    // ========== NAVIGATION FOR SIGNAL SUBMENU (Screen 1) ==========
     else if (current_screen == 1) {
         int num_signals = CATEGORIES[category_selected].count;
-        
-        if ((digitalRead(BUTTON_UP_PIN) == LOW) && (button_up_clicked == 0)) {
-            signal_selected = signal_selected - 1;
-            button_up_clicked = 1;
-            if (signal_selected < 0) {
-                signal_selected = num_signals - 1;
-            }
+        if (buttonUp.isPressed()) {
+            signal_selected = (signal_selected - 1 + num_signals) % num_signals;
         }
-        else if ((digitalRead(BUTTON_DOWN_PIN) == LOW) && (button_down_clicked == 0)) {
-            signal_selected = signal_selected + 1;
-            button_down_clicked = 1;
-            if (signal_selected >= num_signals) {
-                signal_selected = 0;
-            }
+        if (buttonDown.isPressed()) {
+            signal_selected = (signal_selected + 1) % num_signals;
         }
-        
-        if (digitalRead(BUTTON_UP_PIN) == HIGH) button_up_clicked = 0;
-        if (digitalRead(BUTTON_DOWN_PIN) == HIGH) button_down_clicked = 0;
     }
     
-    // ========== SELECT BUTTON (navigate between screens) ==========
-    if ((digitalRead(BUTTON_SELECT_PIN) == LOW) && (button_select_clicked == 0)) {
-        button_select_clicked = 1;
-        
+    if (buttonSelect.isPressed()) {
         if (current_screen == 0) {
-            // Category menu → Signal submenu
             current_screen = 1;
-            signal_selected = 0;  // Reset signal selection when entering category
+            signal_selected = 0;
         }
         else if (current_screen == 1) {
-            // Signal submenu → Signal details
             current_screen = 2;
         }
         else if (current_screen == 2) {
-            // Signal details → Transmit
             current_screen = 3;
+            // Transmit using radio object
+            SubGHzSignal* signal = &CATEGORIES[category_selected].signals[signal_selected];
+            radio.transmit(signal->samples, signal->length, signal->frequency);
         }
-        else {
-            // Transmit → back to signal submenu
-            current_screen = 1;
-        }
-    }
-    if (digitalRead(BUTTON_SELECT_PIN) == HIGH) {
-        button_select_clicked = 0;
     }
     
-    // ========== CALCULATE PREV/NEXT FOR CATEGORY MENU ==========
-    category_sel_previous = category_selected - 1;
-    if (category_sel_previous < 0) {
-        category_sel_previous = NUM_CATEGORIES - 1;
-    }
-    category_sel_next = category_selected + 1;
-    if (category_sel_next >= NUM_CATEGORIES) {
-        category_sel_next = 0;
-    }
-    
-    // ========== CALCULATE PREV/NEXT FOR SIGNAL SUBMENU ==========
-    int num_signals = CATEGORIES[category_selected].count;
-    signal_sel_previous = signal_selected - 1;
-    if (signal_sel_previous < 0) {
-        signal_sel_previous = num_signals - 1;
-    }
-    signal_sel_next = signal_selected + 1;
-    if (signal_sel_next >= num_signals) {
-        signal_sel_next = 0;
+    if (buttonBack.isPressed()) {
+        if (current_screen > 0) {
+            current_screen--;
+        }
     }
     
     // ========== DRAW SCREENS ==========
