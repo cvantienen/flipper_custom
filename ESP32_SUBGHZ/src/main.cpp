@@ -1,19 +1,21 @@
 #include <ELECHOUSE_CC1101_SRC_DRV.h>
-#include "U8g2lib.h"
-#include <Wire.h>
-// custom includes
-#include <menu.h>
-#include <icon.h>
-#include <radio.h>
-#include <signals.h>  // ← ADD THIS
+#include <U8g2lib.h>
 
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0);
+#include "button.h"
+#include "icon.h"
+#include "radio.h"
+#include "signals.h"
+#include "display.h"
+#include "menu.h"
 
-// Keep your existing bitmap arrays
+
+// =============================================================================
+// ICONS (for display)
+// =============================================================================
 const unsigned char *bitmap_icons[8] = {
     bitmap_icon_3dcube,
     bitmap_icon_battery,
-    bitmap_icon_dashboard,
+    bitmap_icon_gauges,
     bitmap_icon_fireworks,
     bitmap_icon_gps_speed,
     bitmap_icon_knob_over_oled,
@@ -21,259 +23,138 @@ const unsigned char *bitmap_icons[8] = {
     bitmap_icon_turbo
 };
 
-// Menu variables
-int button_up_clicked = 0;
-int button_select_clicked = 0;
-int button_down_clicked = 0;
+// =============================================================================
+// BUTTONS 
+// =============================================================================
+Button button_up(BUTTON_UP_PIN);
+Button button_select(BUTTON_SELECT_PIN);
+Button button_down(BUTTON_DOWN_PIN);
+Button button_back(BUTTON_BACK_PIN);
 
-// Category menu variables
-int category_selected = 0;
-int category_sel_previous;
-int category_sel_next;
+// =============================================================================
+// RADIO OBJECT
+// =============================================================================
+SubghzRadio radio;
 
-// Signal submenu variables
-int signal_selected = 0;
-int signal_sel_previous;
-int signal_sel_next;
+// =============================================================================
+// DISPLAY OBJECT
+// =============================================================================
+OledDisplay display(bitmap_icons);
 
-// Screen states: 0=category menu, 1=signal submenu, 2=signal details, 3=transmit
-int current_screen = 0;
+// =============================================================================
+// MENU OBJECT
+// =============================================================================
+Menu menu;
 
+// =============================================================================
+// SETUP
+// =============================================================================
 void setup()
 {
     Serial.begin(115200);
-    
     Serial.println("\n[setup] Booting ESP32...");
-    Serial.println("[setup] Initializing CC1101...");
-    initCC1101(433.92);
-    
-    if (ELECHOUSE_cc1101.getCC1101()) {
-        Serial.println("[setup] ✅ Connection OK");
-    } else {
-        Serial.println("[setup] ❌ No CC1101 detected");
-    }
-    
-    Serial.println("[setup] Setup complete.\n");
-    menuSetup();
-    u8g2.clearBuffer();
+
+    button_up.init();
+    button_select.init();
+    button_down.init();
+    button_back.init();
+
+    radio.initCC1101();
+    display.init();
+
+    menu.setCurrentScreen(MenuScreen::CATEGORIES);
+    menu.setCategoryCount(NUM_OF_CATEGORIES);
 }
+
+// =============================================================================
+// MAIN LOOP
+// =============================================================================
+// The loop does 3 things every frame:
+//   1. HANDLE INPUT  - Check buttons, update state
+//   2. CALCULATE     - Compute prev/next indices for display
+//   3. DRAW          - Render the current screen
+//
+// REFACTOR: Split into menu.handleInput(), menu.update(), display.draw(menu)
 
 void loop()
 {
-    // ========== NAVIGATION FOR CATEGORY MENU (Screen 0) ==========
-    if (current_screen == 0) {
-        if ((digitalRead(BUTTON_UP_PIN) == LOW) && (button_up_clicked == 0)) {
-            category_selected = category_selected - 1;
-            button_up_clicked = 1;
-            if (category_selected < 0) {
-                category_selected = NUM_CATEGORIES - 1;
+    // =========================================================================
+    // HANDLE INPUT (per-screen button logic)
+    switch (menu.getCurrentScreen())
+    {
+        case MenuScreen::CATEGORIES:
+            if (button_up.pressed())   menu.categoryUp();
+            if (button_down.pressed()) menu.categoryDown();
+            if (button_select.pressed()) {
+                menu.setCurrentScreen(MenuScreen::SIGNALS);
+                menu.setSignalCount(SIGNAL_CATEGORIES[menu.getSelectedCategory()].count);
+                menu.resetSignal();
             }
-        }
-        else if ((digitalRead(BUTTON_DOWN_PIN) == LOW) && (button_down_clicked == 0)) {
-            category_selected = category_selected + 1;
-            button_down_clicked = 1;
-            if (category_selected >= NUM_CATEGORIES) {
-                category_selected = 0;
-            }
-        }
-        
-        if (digitalRead(BUTTON_UP_PIN) == HIGH) button_up_clicked = 0;
-        if (digitalRead(BUTTON_DOWN_PIN) == HIGH) button_down_clicked = 0;
+            break;
+
+        case MenuScreen::SIGNALS:
+            if (button_up.pressed())   menu.signalUp();
+            if (button_down.pressed()) menu.signalDown();
+            if (button_back.pressed()) menu.setCurrentScreen(MenuScreen::CATEGORIES);
+            if (button_select.pressed()) menu.setCurrentScreen(MenuScreen::DETAILS);
+            break;
+
+        case MenuScreen::DETAILS:
+            if (button_back.pressed())   menu.setCurrentScreen(MenuScreen::SIGNALS);
+            if (button_select.pressed()) menu.setCurrentScreen(MenuScreen::TRANSMIT);
+            break;
+
+        case MenuScreen::TRANSMIT:
+            // Handled in draw section
+            break;
     }
-    
-    // ========== NAVIGATION FOR SIGNAL SUBMENU (Screen 1) ==========
-    else if (current_screen == 1) {
-        int num_signals = CATEGORIES[category_selected].count;
-        
-        if ((digitalRead(BUTTON_UP_PIN) == LOW) && (button_up_clicked == 0)) {
-            signal_selected = signal_selected - 1;
-            button_up_clicked = 1;
-            if (signal_selected < 0) {
-                signal_selected = num_signals - 1;
-            }
-        }
-        else if ((digitalRead(BUTTON_DOWN_PIN) == LOW) && (button_down_clicked == 0)) {
-            signal_selected = signal_selected + 1;
-            button_down_clicked = 1;
-            if (signal_selected >= num_signals) {
-                signal_selected = 0;
-            }
-        }
-        
-        if (digitalRead(BUTTON_UP_PIN) == HIGH) button_up_clicked = 0;
-        if (digitalRead(BUTTON_DOWN_PIN) == HIGH) button_down_clicked = 0;
+
+    // =========================================================================
+    // DRAW CURRENT SCREEN
+    // Clear buffer, draw based on current_screen, then show.
+    display.clear();
+
+    if (menu.getCurrentScreen() == MenuScreen::CATEGORIES)
+    {
+        // Draw category list with prev/current/next visible
+        display.drawCategoryMenu(
+            menu.getSelectedCategory(),
+            menu.getCategoryPrev(),
+            menu.getCategoryNext(),
+            NUM_OF_CATEGORIES
+        );
     }
-    
-    // ========== SELECT BUTTON (navigate between screens) ==========
-    if ((digitalRead(BUTTON_SELECT_PIN) == LOW) && (button_select_clicked == 0)) {
-        button_select_clicked = 1;
-        
-        if (current_screen == 0) {
-            // Category menu → Signal submenu
-            current_screen = 1;
-            signal_selected = 0;  // Reset signal selection when entering category
-        }
-        else if (current_screen == 1) {
-            // Signal submenu → Signal details
-            current_screen = 2;
-        }
-        else if (current_screen == 2) {
-            // Signal details → Transmit
-            current_screen = 3;
-        }
-        else {
-            // Transmit → back to signal submenu
-            current_screen = 1;
-        }
+    else if (menu.getCurrentScreen() == MenuScreen::SIGNALS)
+    {   
+        // Draw signal list for selected category
+        display.drawSignalMenu(
+            SIGNAL_CATEGORIES[menu.getSelectedCategory()].name,
+            SIGNAL_CATEGORIES[menu.getSelectedCategory()].signals,
+            menu.getSelectedSignal(),
+            menu.getSignalPrev(),
+            menu.getSignalNext(),
+            menu.getSignalCount()
+        );
     }
-    if (digitalRead(BUTTON_SELECT_PIN) == HIGH) {
-        button_select_clicked = 0;
+    else if (menu.getCurrentScreen() == MenuScreen::DETAILS)
+    {
+        // Get the selected signal
+        SubGHzSignal *signal = &SIGNAL_CATEGORIES[menu.getSelectedCategory()].signals[menu.getSelectedSignal()];
+        // Draw signal details
+        display.drawSignalDetails(SIGNAL_CATEGORIES[menu.getSelectedCategory()].name, signal);
     }
-    
-    // ========== CALCULATE PREV/NEXT FOR CATEGORY MENU ==========
-    category_sel_previous = category_selected - 1;
-    if (category_sel_previous < 0) {
-        category_sel_previous = NUM_CATEGORIES - 1;
+    else if (menu.getCurrentScreen() == MenuScreen::TRANSMIT)
+    {
+        // Get the selected signal
+        SubGHzSignal *signal = &SIGNAL_CATEGORIES[menu.getSelectedCategory()].signals[menu.getSelectedSignal()];
+        // Draw transmitting screen
+        display.drawTransmitting(signal->name, signal->frequency);
+        // Transmit the signal
+        radio.transmit(signal->samples, signal->length, signal->frequency);
+        // Return to the DETAILS screen
+        menu.setCurrentScreen(MenuScreen::DETAILS);
     }
-    category_sel_next = category_selected + 1;
-    if (category_sel_next >= NUM_CATEGORIES) {
-        category_sel_next = 0;
-    }
-    
-    // ========== CALCULATE PREV/NEXT FOR SIGNAL SUBMENU ==========
-    int num_signals = CATEGORIES[category_selected].count;
-    signal_sel_previous = signal_selected - 1;
-    if (signal_sel_previous < 0) {
-        signal_sel_previous = num_signals - 1;
-    }
-    signal_sel_next = signal_selected + 1;
-    if (signal_sel_next >= num_signals) {
-        signal_sel_next = 0;
-    }
-    
-    // ========== DRAW SCREENS ==========
-    u8g2.clearBuffer();
-    
-    if (current_screen == 0) {
-        // ========== CATEGORY MENU ==========
-        u8g2.drawXBMP(0, 22, 128, 21, bitmap_item_sel_outline);
-        
-        // Previous category
-        u8g2.setFont(u8g_font_7x14);
-        u8g2.drawStr(25, 15, CATEGORIES[category_sel_previous].name);
-        u8g2.drawXBMP(4, 2, 16, 16, bitmap_icons[category_sel_previous % 8]);
-        
-        // Selected category (bold)
-        u8g2.setFont(u8g_font_7x14B);
-        u8g2.drawStr(25, 37, CATEGORIES[category_selected].name);
-        u8g2.drawXBMP(4, 24, 16, 16, bitmap_icons[category_selected % 8]);
-        
-        // Next category
-        u8g2.setFont(u8g_font_7x14);
-        u8g2.drawStr(25, 59, CATEGORIES[category_sel_next].name);
-        u8g2.drawXBMP(4, 46, 16, 16, bitmap_icons[category_sel_next % 8]);
-        
-        // Scrollbar
-        u8g2.drawXBMP(128 - 8, 0, 8, 64, bitmap_scrollbar_background);
-        u8g2.drawBox(125, 64 / NUM_CATEGORIES * category_selected, 3, 64 / NUM_CATEGORIES);
-        
-        u8g2.setFont(u8g2_font_5x8_tf);
-        u8g2.drawStr(108, 63, "C.J.");
-    }
-    else if (current_screen == 1) {
-        // ========== SIGNAL SUBMENU ==========
-        SubGHzSignal* signals = CATEGORIES[category_selected].signals;
-        
-        // Draw category title at top
-        u8g2.setFont(u8g2_font_6x10_tf);
-        u8g2.drawStr(5, 10, CATEGORIES[category_selected].name);
-        u8g2.drawLine(0, 12, 128, 12);
-        
-        // Adjust positions for submenu
-        u8g2.drawFrame(2, 18, 124, 18);
-        
-        // Previous signal
-        u8g2.setFont(u8g2_font_6x10_tf);
-        u8g2.drawStr(8, 26, signals[signal_sel_previous].name);
-        
-        // Selected signal (bold)
-        u8g2.setFont(u8g2_font_7x13B_tf);
-        u8g2.drawStr(8, 46, signals[signal_selected].name);
-        
-        // Show frequency
-        u8g2.setFont(u8g2_font_5x8_tf);
-        char freq_str[20];
-        snprintf(freq_str, 20, "%.2f MHz", signals[signal_selected].frequency);
-        u8g2.drawStr(8, 56, freq_str);
-        
-        // Next signal
-        u8g2.setFont(u8g2_font_6x10_tf);
-        u8g2.drawStr(8, 66, signals[signal_sel_next].name);
-        
-        // Scrollbar
-        u8g2.drawFrame(122, 14, 4, 48);
-        int scrollbar_pos = map(signal_selected, 0, num_signals - 1, 0, 40);
-        u8g2.drawBox(123, 15 + scrollbar_pos, 2, 6);
-    }
-    else if (current_screen == 2) {
-        // ========== SIGNAL DETAILS ==========
-        SubGHzSignal* signal = &CATEGORIES[category_selected].signals[signal_selected];
-        
-        u8g2.setFont(u8g2_font_7x13B_tf);
-        u8g2.drawStr(5, 12, signal->name);
-        u8g2.drawLine(0, 14, 128, 14);
-        
-        u8g2.setFont(u8g2_font_6x10_tf);
-        
-        // Category
-        char cat_str[25];
-        snprintf(cat_str, 25, "Cat: %s", CATEGORIES[category_selected].name);
-        u8g2.drawStr(5, 28, cat_str);
-        
-        // Frequency
-        char freq_str[25];
-        snprintf(freq_str, 25, "Freq: %.2f MHz", signal->frequency);
-        u8g2.drawStr(5, 40, freq_str);
-        
-        // Samples
-        char len_str[25];
-        snprintf(len_str, 25, "Samples: %d", signal->length);
-        u8g2.drawStr(5, 52, len_str);
-        
-        // Instruction
-        u8g2.setFont(u8g2_font_5x8_tf);
-        u8g2.drawStr(5, 63, "SELECT to transmit");
-    }
-    else if (current_screen == 3) {
-        // ========== TRANSMIT SCREEN ==========
-        SubGHzSignal* signal = &CATEGORIES[category_selected].signals[signal_selected];
-        
-        u8g2.setFont(u8g2_font_9x15B_tf);
-        u8g2.drawStr(15, 25, "SENDING...");
-        
-        u8g2.setFont(u8g2_font_7x13_tf);
-        u8g2.drawStr(10, 45, signal->name);
-        
-        char freq_str[20];
-        snprintf(freq_str, 20, "%.2f MHz", signal->frequency);
-        u8g2.setFont(u8g2_font_6x10_tf);
-        u8g2.drawStr(30, 58, freq_str);
-        
-        u8g2.sendBuffer();  // Show immediately
-        
-        // ← CALL YOUR SEND FUNCTION
-        sendSamples(signal->samples, signal->length, signal->frequency);
-        
-        // Show completion
-        u8g2.clearBuffer();
-        u8g2.setFont(u8g2_font_9x15B_tf);
-        u8g2.drawStr(35, 30, "SENT!");
-        u8g2.sendBuffer();
-        delay(800);
-        
-        current_screen = 1;  // Back to signal submenu
-    }
-    
-    u8g2.sendBuffer();
+
+    display.show();
     delay(10);
 }

@@ -1,23 +1,51 @@
 #ifndef RADIO_H
 #define RADIO_H
 
-// SAMPLE LENGTHS
-#define LENGTH_SAMPLES_SIGNAL_1 5
-#define LENGTH_SAMPLES_SIGNAL_2 5
-#define LENGTH_SAMPLES_SIGNAL_3 5
-#define LENGTH_SAMPLES_SIGNAL_4 5
+// RADIO OBJECT
+class SubghzRadio {
 
-// CC1101 PIN DEFINITIONS
-// EBYTE E07-M1101D-SMA 433MHz  variation 
-#define PIN_M1101_SCK 18
-#define PIN_M1101_MISO 19
-#define PIN_M1101_MOSI 23
-#define PIN_M1101_SS 5
-#define PIN_GDO0 2
-#define PIN_GDO2 4
+  private:
+    // Pin definitions
+    static constexpr int PIN_SCK  = 18;
+    static constexpr int PIN_MISO = 19;
+    static constexpr int PIN_MOSI = 23;
+    static constexpr int PIN_SS   = 5;
+    static constexpr int PIN_GDO0 = 2;
+    static constexpr int PIN_GDO2 = 4;
+    
 
-// FUNCTION DECLARATIONS
-void initCC1101(float mhz);
-void sendSamples(int samples[], int samplesLength, float mhz);
+
+    // Radio settings
+    float frequency = 433.92;// MHz
+    int dataRate = 512;// bps
+    int modulation = 2;// 2=FSK
+    int pktFormat = 3;// 3=Normal mode
+    
+    // Radio mode state
+    enum class Mode { TX, RX, IDLE, SLEEP };
+    Mode currentMode; // Current radio mode
+
+  public:
+    
+    // Setters
+    void setFrequency(float mhz);
+    void setDataRate(int rate);
+    void setModulation(int mod);
+    void setPacketFormat(int format);
+    void setRadioMode(Mode mode);
+
+    // Getters
+    float getFrequency();
+    int getDataRate();
+    int getModulation();
+    int getPacketFormat();
+    Mode getMode();
+    
+    
+    // Transmit samples
+    void transmit(const int16_t* samples, uint16_t samplesLength, float mhz);
+    // Initialize CC1101
+    void initCC1101();
+};
 
 #endif
